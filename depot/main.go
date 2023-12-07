@@ -72,6 +72,46 @@ func (m *Depot) Build(ctx context.Context,
 	)
 }
 
+// example usage: "dagger call depot bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl --load"
+func (m *Depot) Bake(ctx context.Context,
+	// depot CLI version (default: latest)
+	depotVersion Optional[string],
+	// depot token
+	token *Secret,
+	// depot project id
+	project string,
+	// source context directory for build
+	directory *Directory,
+	// path to bake definition file
+	bakeFile string,
+	// docker host (default: unix:///var/run/docker.sock)
+	dockerHost Optional[string],
+	// load image into local docker daemon.
+	load Optional[bool],
+	// produce software bill of materials for image
+	sbom Optional[bool],
+	// do not use layer cache when building the image
+	noCache Optional[bool],
+	provenance Optional[string],
+	// lint dockerfile
+	lint Optional[bool],
+) (*Container, error) {
+	return bake(
+		ctx,
+		depotVersion.GetOr(""),
+		token,
+		project,
+		directory,
+		bakeFile,
+		dockerHost.GetOr(""),
+		load.GetOr(false),
+		sbom.GetOr(false),
+		noCache.GetOr(false),
+		lint.GetOr(false),
+		provenance.GetOr(""),
+	)
+}
+
 // example usage: "dagger call depot builder with-token --token $DEPOT_TOKEN  with-project  --project $DEPOT_RPOJECT with-directory --directory . with-tag --tag howdy/microservice:6.5.44  with-load run"
 func (m *Depot) Builder() *Builder {
 	return &Builder{}
@@ -260,6 +300,72 @@ func build(ctx context.Context,
 
 	if dockerfile != "" {
 		args = append(args, "--file", dockerfile)
+	}
+
+	if provenance != "" {
+		args = append(args, "--provenance", provenance)
+	}
+
+	if depotVersion == "" {
+		var err error
+		depotVersion, err = latestDepotVersion()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	depotImage := fmt.Sprintf("ghcr.io/depot/cli:%s", depotVersion)
+
+	container := dag.Container().
+		From(depotImage).
+		WithMountedDirectory("/mnt", directory).
+		WithEnvVariable("DEPOT_PROJECT_ID", project).
+		WithSecretVariable("DEPOT_TOKEN", token).
+		WithWorkdir("/mnt")
+
+	if dockerHost == "" {
+		dockerHost = DefaultDockerHost
+	}
+
+	switch {
+	case strings.HasPrefix(dockerHost, "unix://"):
+		dockerHost = strings.TrimPrefix(dockerHost, "unix://")
+
+		container = container.WithUnixSocket("/var/run/docker.sock", dag.Host().UnixSocket(dockerHost))
+		container = container.WithEnvVariable("DOCKER_HOST", "unix:///var/run/docker.sock")
+	case strings.HasPrefix(dockerHost, "tcp://"):
+		container = container.WithEnvVariable("DOCKER_HOST", dockerHost)
+	}
+	// WithExec must come after WithUnixSocket and WithEnvVariable please.
+	return container.WithExec(args, ContainerWithExecOpts{SkipEntrypoint: true}), nil
+}
+
+func bake(ctx context.Context,
+	depotVersion string,
+	token *Secret,
+	project string,
+	directory *Directory,
+	bakeFile string,
+	dockerHost string,
+	load bool,
+	sbom bool,
+	noCache bool,
+	lint bool,
+	provenance string,
+) (*Container, error) {
+	args := []string{"/usr/bin/depot", "bake", "-f", bakeFile}
+
+	if load {
+		args = append(args, "--load")
+	}
+	if sbom {
+		args = append(args, "--sbom=true")
+	}
+	if noCache {
+		args = append(args, "--no-cache")
+	}
+	if lint {
+		args = append(args, "--lint")
 	}
 
 	if provenance != "" {
