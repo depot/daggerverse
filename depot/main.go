@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"runtime"
 	"strings"
 )
 
@@ -9,7 +13,73 @@ const (
 	DefaultDockerHost = "unix:///var/run/docker.sock"
 )
 
-type Depot struct {
+type Depot struct{}
+
+// example usage: "dagger call depot build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory .  --tags howdy/microservice:6.5.44  --load"
+func (m *Depot) Depot() *Depot {
+	return &Depot{}
+}
+
+// example usage: "dagger call depot build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory .  --tags howdy/microservice:6.5.44  --load"
+func (m *Depot) Build(ctx context.Context,
+	// depot CLI version (default: latest)
+	depotVersion Optional[string],
+	// depot token
+	token *Secret,
+	// depot project id
+	project string,
+	// source context directory for build
+	directory *Directory,
+	// path to dockerfile (default: Dockerfile)
+	dockerfile Optional[string],
+	// target platforms for build
+	platforms Optional[[]Platform],
+	// docker host (default: unix:///var/run/docker.sock)
+	dockerHost Optional[string],
+	// load image into local docker daemon.
+	load Optional[bool],
+	// produce software bill of materials for image
+	sbom Optional[bool],
+	// do not use layer cache when building the image
+	noCache Optional[bool],
+	// lint dockerfile
+	lint Optional[bool],
+	// name and tag for output image
+	tags Optional[[]string],
+	buildArgs Optional[[]string],
+	labels Optional[[]string],
+	outputs Optional[[]string],
+	provenance Optional[string],
+) (*Container, error) {
+	return build(
+		ctx,
+		depotVersion.GetOr(""),
+		token,
+		project,
+		directory,
+		dockerfile.GetOr(""),
+		platforms.GetOr([]Platform{}),
+		dockerHost.GetOr(""),
+		load.GetOr(false),
+		sbom.GetOr(false),
+		noCache.GetOr(false),
+		lint.GetOr(false),
+		tags.GetOr([]string{}),
+		buildArgs.GetOr([]string{}),
+		labels.GetOr([]string{}),
+		outputs.GetOr([]string{}),
+		provenance.GetOr(""),
+	)
+}
+
+// example usage: "dagger call depot builder with-token --token $DEPOT_TOKEN  with-project  --project $DEPOT_RPOJECT with-directory --directory . with-tag --tag howdy/microservice:6.5.44  with-load run"
+func (m *Depot) Builder() *Builder {
+	return &Builder{}
+}
+
+type Builder struct {
+	DepotVersion string
+
 	// DockerHost is used for --load.
 	DockerHost string
 
@@ -20,7 +90,6 @@ type Depot struct {
 
 	Platforms []Platform
 
-	Push    bool
 	Load    bool
 	SBOM    bool
 	Lint    bool
@@ -34,84 +103,100 @@ type Depot struct {
 	Provenance string
 }
 
-func (m *Depot) WithToken(token *Secret) *Depot {
+func (m *Builder) WithDepotVersion(version string) *Builder {
+	m.DepotVersion = version
+	return m
+}
+
+func (m *Builder) WithToken(token *Secret) *Builder {
 	m.Token = token
 	return m
 }
 
-func (m *Depot) WithProject(project string) *Depot {
+func (m *Builder) WithProject(project string) *Builder {
 	m.Project = project
 	return m
 }
 
-func (m *Depot) WithDirectory(directory *Directory) *Depot {
+func (m *Builder) WithDirectory(directory *Directory) *Builder {
 	m.Directory = directory
 	return m
 }
 
-func (m *Depot) WithDockerfile(dockerfile string) *Depot {
+func (m *Builder) WithDockerfile(dockerfile string) *Builder {
 	m.Dockerfile = dockerfile
 	return m
 }
 
-func (m *Depot) WithNoCache() *Depot {
+func (m *Builder) WithNoCache() *Builder {
 	m.NoCache = true
 	return m
 }
 
-func (m *Depot) WithPush() *Depot {
-	m.Push = true
-	return m
-}
-
-func (m *Depot) WithLoad() *Depot {
+func (m *Builder) WithLoad() *Builder {
 	m.Load = true
 	return m
 }
 
-func (m *Depot) WithSBOM() *Depot {
+func (m *Builder) WithSBOM() *Builder {
 	m.SBOM = true
 	return m
 }
 
-func (m *Depot) WithPlatform(platform Platform) *Depot {
+func (m *Builder) WithLint() *Builder {
+	m.Lint = true
+	return m
+}
+
+func (m *Builder) WithPlatform(platform Platform) *Builder {
 	m.Platforms = append(m.Platforms, platform)
 	return m
 }
 
-func (m *Depot) WithTag(tag string) *Depot {
+func (m *Builder) WithTag(tag string) *Builder {
 	m.Tags = append(m.Tags, tag)
 	return m
 }
 
-func (m *Depot) WithBuildArg(arg string) *Depot {
+func (m *Builder) WithBuildArg(arg string) *Builder {
 	m.BuildArgs = append(m.BuildArgs, arg)
 	return m
 }
 
-func (m *Depot) WithLabel(label string) *Depot {
+func (m *Builder) WithLabel(label string) *Builder {
 	m.Labels = append(m.Labels, label)
 	return m
 }
 
-func (m *Depot) WithOutput(output string) *Depot {
+func (m *Builder) WithOutput(output string) *Builder {
 	m.Outputs = append(m.Outputs, output)
 	return m
 }
 
-func (m *Depot) Run(ctx context.Context) (*Container, error) {
+func (m *Builder) WithProvenance(provenance string) *Builder {
+	m.Provenance = provenance
+	return m
+}
+
+func (m *Builder) WithDockerHost(dockerHost string) *Builder {
+	m.DockerHost = dockerHost
+	return m
+}
+
+func (m *Builder) Run(ctx context.Context) (*Container, error) {
 	return build(
 		ctx,
+		m.DepotVersion,
 		m.Token,
 		m.Project,
 		m.Directory,
 		m.Dockerfile,
 		m.Platforms,
-		m.Push,
 		m.DockerHost,
 		m.Load,
 		m.SBOM,
 		m.NoCache,
+		m.Lint,
 		m.Tags,
 		m.BuildArgs,
 		m.Labels,
@@ -120,56 +205,18 @@ func (m *Depot) Run(ctx context.Context) (*Container, error) {
 	)
 }
 
-// example usage: "dagger call depot build --token hunter2 --project 1234 --directory . platform --arg linux/arm64"
-func (m *Depot) Build(ctx context.Context,
-	token *Secret,
-	project string,
-	directory *Directory,
-	dockerfile Optional[string],
-	platforms Optional[[]Platform],
-	push Optional[bool],
-	// docker host (default: unix:///var/run/docker.sock)
-	dockerHost Optional[string],
-	load Optional[bool],
-	sbom Optional[bool],
-	noCache Optional[bool],
-	tags Optional[[]string],
-	buildArgs Optional[[]string],
-	labels Optional[[]string],
-	outputs Optional[[]string],
-	provenance Optional[string],
-) (*Container, error) {
-	return build(
-		ctx,
-		token,
-		project,
-		directory,
-		dockerfile.GetOr(m.Dockerfile),
-		platforms.GetOr(m.Platforms),
-		push.GetOr(m.Push),
-		dockerHost.GetOr(m.DockerHost),
-		load.GetOr(m.Load),
-		sbom.GetOr(m.SBOM),
-		noCache.GetOr(m.NoCache),
-		tags.GetOr(m.Tags),
-		buildArgs.GetOr(m.BuildArgs),
-		labels.GetOr(m.Labels),
-		outputs.GetOr(m.Outputs),
-		provenance.GetOr(m.Provenance),
-	)
-}
-
 func build(ctx context.Context,
+	depotVersion string,
 	token *Secret,
 	project string,
 	directory *Directory,
 	dockerfile string,
 	platforms []Platform,
-	push bool,
 	dockerHost string,
 	load bool,
 	sbom bool,
 	noCache bool,
+	lint bool,
 	tags []string,
 	buildArgs []string,
 	labels []string,
@@ -178,9 +225,6 @@ func build(ctx context.Context,
 ) (*Container, error) {
 	args := []string{"/usr/bin/depot", "build", "."}
 
-	if push {
-		args = append(args, "--push")
-	}
 	if load {
 		args = append(args, "--load")
 	}
@@ -189,6 +233,9 @@ func build(ctx context.Context,
 	}
 	if noCache {
 		args = append(args, "--no-cache")
+	}
+	if lint {
+		args = append(args, "--lint")
 	}
 
 	for _, tag := range tags {
@@ -219,13 +266,22 @@ func build(ctx context.Context,
 		args = append(args, "--provenance", provenance)
 	}
 
+	if depotVersion == "" {
+		var err error
+		depotVersion, err = latestDepotVersion()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	depotImage := fmt.Sprintf("ghcr.io/depot/cli:%s", depotVersion)
+
 	container := dag.Container().
-		From("ghcr.io/depot/cli:2.46.0").
+		From(depotImage).
 		WithMountedDirectory("/mnt", directory).
 		WithEnvVariable("DEPOT_PROJECT_ID", project).
 		WithSecretVariable("DEPOT_TOKEN", token).
-		WithWorkdir("/mnt").
-		WithEntrypoint(args)
+		WithWorkdir("/mnt")
 
 	if dockerHost == "" {
 		dockerHost = DefaultDockerHost
@@ -240,6 +296,33 @@ func build(ctx context.Context,
 	case strings.HasPrefix(dockerHost, "tcp://"):
 		container = container.WithEnvVariable("DOCKER_HOST", dockerHost)
 	}
+	// WithExec must come after WithUnixSocket and WithEnvVariable please.
+	return container.WithExec(args, ContainerWithExecOpts{SkipEntrypoint: true}), nil
+}
 
-	return container, nil
+func latestDepotVersion() (string, error) {
+	url := fmt.Sprintf("https://dl.depot.dev/cli/release/%s/%s/latest", runtime.GOOS, runtime.GOARCH)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Add("Content-Type", "application/json")
+	//req.Header.Add("User-Agent", Agent())
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	version := struct {
+		Version string `json:"version"`
+	}{}
+	err = json.NewDecoder(resp.Body).Decode(&version)
+	if err != nil {
+		return "", err
+	}
+
+	return version.Version, nil
 }
