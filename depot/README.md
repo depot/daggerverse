@@ -7,15 +7,15 @@ Daggerized version of [depot](https://depot.dev).
 ## Example
 
 ### build
+
 ```sh
-dagger -m github.com/depot/dagger-mod/depot call \
-  depot build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --tags howdy/microservice:6.5.44  --load
+dagger call -m github.com/depot/dagger-mod/depot \
+  build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --tags howdy/microservice:6.5.44  --load
 ```
 
 ### bake
 
 ```sh
-dagger -m github.com/depot/dagger-mod/depot call \
-  depot bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl --load
+dagger call -m github.com/depot/dagger-mod/depot \
+  bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl --load
 ```
-

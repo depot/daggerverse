@@ -15,12 +15,7 @@ const (
 
 type Depot struct{}
 
-// example usage: "dagger call depot build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory .  --tags howdy/microservice:6.5.44  --load"
-func (m *Depot) Depot() *Depot {
-	return &Depot{}
-}
-
-// example usage: "dagger call depot build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory .  --tags howdy/microservice:6.5.44  --load"
+// example usage: "dagger call build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory .  --tags howdy/microservice:6.5.44  --load"
 func (m *Depot) Build(ctx context.Context,
 	// depot CLI version (default: latest)
 	depotVersion Optional[string],
@@ -72,7 +67,7 @@ func (m *Depot) Build(ctx context.Context,
 	)
 }
 
-// example usage: "dagger call depot bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl --load"
+// example usage: "dagger call bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl --load"
 func (m *Depot) Bake(ctx context.Context,
 	// depot CLI version (default: latest)
 	depotVersion Optional[string],
@@ -112,7 +107,7 @@ func (m *Depot) Bake(ctx context.Context,
 	)
 }
 
-// example usage: "dagger call depot builder with-token --token $DEPOT_TOKEN  with-project  --project $DEPOT_RPOJECT with-directory --directory . with-tag --tag howdy/microservice:6.5.44  with-load run"
+// example usage: "dagger call builder with-token --token $DEPOT_TOKEN  with-project  --project $DEPOT_RPOJECT with-directory --directory . with-tag --tag howdy/microservice:6.5.44  with-load run"
 func (m *Depot) Builder() *Builder {
 	return &Builder{}
 }
