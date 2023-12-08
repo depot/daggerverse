@@ -9,13 +9,13 @@ Daggerized version of [depot](https://depot.dev).
 ### build
 
 ```sh
-dagger call -m github.com/depot/dagger-mod/depot \
+dagger call -m github.com/depot/daggerverse/depot \
   build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --tags howdy/microservice:6.5.44  --load
 ```
 
 ### bake
 
 ```sh
-dagger call -m github.com/depot/dagger-mod/depot \
+dagger call -m github.com/depot/daggerverse/depot \
   bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl --load
 ```
