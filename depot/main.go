@@ -13,9 +13,41 @@ const (
 	DefaultDockerHost = "unix:///var/run/docker.sock"
 )
 
-type Depot struct{}
+type Depot struct {
+	// depot CLI version (default: latest)
+	DepotVersion string
+	// DockerHost is used for --load.
+	DockerHost string
+	// Depot token
+	Token *Secret
+	// Depot project id
+	Project string
+	// Source context directory for build
+	Directory *Directory
+	// Path to dockerfile (default: Dockerfile)
+	Dockerfile string
+	// target platforms for build
+	Platforms []Platform
 
-// example usage: "dagger call build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory .  --tags howdy/microservice:6.5.44  --load"
+	// load image into local docker daemon.
+	Load bool
+	// produce software bill of materials for image
+	SBOM bool
+	// lint dockerfile
+	Lint bool
+	// do not use layer cache when building the image
+	NoCache bool
+
+	// name and tag for output image
+	Tags      []string
+	BuildArgs []string
+	Labels    []string
+	Outputs   []string
+
+	Provenance string
+}
+
+// example usage: `dagger call build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory .  --tags howdy/microservice:6.5.44  --load`
 func (m *Depot) Build(ctx context.Context,
 	// depot CLI version (default: latest)
 	depotVersion Optional[string],
@@ -67,7 +99,7 @@ func (m *Depot) Build(ctx context.Context,
 	)
 }
 
-// example usage: "dagger call bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl --load"
+// example usage: `dagger call bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl --load“
 func (m *Depot) Bake(ctx context.Context,
 	// depot CLI version (default: latest)
 	depotVersion Optional[string],
@@ -104,139 +136,6 @@ func (m *Depot) Bake(ctx context.Context,
 		noCache.GetOr(false),
 		lint.GetOr(false),
 		provenance.GetOr(""),
-	)
-}
-
-// example usage: "dagger call builder with-token --token $DEPOT_TOKEN  with-project  --project $DEPOT_RPOJECT with-directory --directory . with-tag --tag howdy/microservice:6.5.44  with-load run"
-func (m *Depot) Builder() *Builder {
-	return &Builder{}
-}
-
-type Builder struct {
-	DepotVersion string
-
-	// DockerHost is used for --load.
-	DockerHost string
-
-	Token      *Secret
-	Project    string
-	Directory  *Directory
-	Dockerfile string
-
-	Platforms []Platform
-
-	Load    bool
-	SBOM    bool
-	Lint    bool
-	NoCache bool
-
-	Tags      []string
-	BuildArgs []string
-	Labels    []string
-	Outputs   []string
-
-	Provenance string
-}
-
-func (m *Builder) WithDepotVersion(version string) *Builder {
-	m.DepotVersion = version
-	return m
-}
-
-func (m *Builder) WithToken(token *Secret) *Builder {
-	m.Token = token
-	return m
-}
-
-func (m *Builder) WithProject(project string) *Builder {
-	m.Project = project
-	return m
-}
-
-func (m *Builder) WithDirectory(directory *Directory) *Builder {
-	m.Directory = directory
-	return m
-}
-
-func (m *Builder) WithDockerfile(dockerfile string) *Builder {
-	m.Dockerfile = dockerfile
-	return m
-}
-
-func (m *Builder) WithNoCache() *Builder {
-	m.NoCache = true
-	return m
-}
-
-func (m *Builder) WithLoad() *Builder {
-	m.Load = true
-	return m
-}
-
-func (m *Builder) WithSBOM() *Builder {
-	m.SBOM = true
-	return m
-}
-
-func (m *Builder) WithLint() *Builder {
-	m.Lint = true
-	return m
-}
-
-func (m *Builder) WithPlatform(platform Platform) *Builder {
-	m.Platforms = append(m.Platforms, platform)
-	return m
-}
-
-func (m *Builder) WithTag(tag string) *Builder {
-	m.Tags = append(m.Tags, tag)
-	return m
-}
-
-func (m *Builder) WithBuildArg(arg string) *Builder {
-	m.BuildArgs = append(m.BuildArgs, arg)
-	return m
-}
-
-func (m *Builder) WithLabel(label string) *Builder {
-	m.Labels = append(m.Labels, label)
-	return m
-}
-
-func (m *Builder) WithOutput(output string) *Builder {
-	m.Outputs = append(m.Outputs, output)
-	return m
-}
-
-func (m *Builder) WithProvenance(provenance string) *Builder {
-	m.Provenance = provenance
-	return m
-}
-
-func (m *Builder) WithDockerHost(dockerHost string) *Builder {
-	m.DockerHost = dockerHost
-	return m
-}
-
-func (m *Builder) Run(ctx context.Context) (*Container, error) {
-	return build(
-		ctx,
-		m.DepotVersion,
-		m.Token,
-		m.Project,
-		m.Directory,
-		m.Dockerfile,
-		m.Platforms,
-		m.DockerHost,
-		m.Load,
-		m.SBOM,
-		m.NoCache,
-		m.Lint,
-		m.Tags,
-		m.BuildArgs,
-		m.Labels,
-		m.Outputs,
-		m.Provenance,
 	)
 }
 
