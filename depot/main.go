@@ -16,7 +16,7 @@ const (
 type Depot struct {
 	// depot CLI version (default: latest)
 	DepotVersion string
-	// DockerHost is used for --load.
+	// DockerHost is used for `--load`.
 	DockerHost string
 	// Depot token
 	Token *Secret
@@ -99,7 +99,7 @@ func (m *Depot) Build(ctx context.Context,
 	)
 }
 
-// example usage: `dagger call bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl --load“
+// example usage: `dagger call bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl --load`
 func (m *Depot) Bake(ctx context.Context,
 	// depot CLI version (default: latest)
 	depotVersion Optional[string],
