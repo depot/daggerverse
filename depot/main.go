@@ -4,12 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"main/internal/metadata"
 	"net/http"
 	"runtime"
-	"strings"
-
-	spdx_json "github.com/spdx/tools-golang/json"
-	"github.com/spdx/tools-golang/spdx"
 )
 
 const (
@@ -50,7 +47,7 @@ type BuildArtifact struct {
 	// depot project id
 	Project string
 
-	Metadata Metadata
+	Metadata metadata.Metadata
 	SBOMDir  *Directory
 }
 
@@ -60,47 +57,35 @@ func (b *BuildArtifact) Container() *Container {
 }
 
 // Returns the size in bytes of the image.
-// This is the sum of the size of the image config and all layers.
-// Note that this is the compressed layer size.  Images are stored compressed in the registry.
-// The on-disk, uncompressed size is not available.
 func (b *BuildArtifact) ImageBytes() int64 {
+	// This is the sum of the size of the image config and all layers.
+	// Note that this is the compressed layer size.  Images are stored compressed in the registry.
+	// The on-disk, uncompressed size is not available.
 	return b.Metadata.Size()
 }
 
-type Document struct {
-	// SPDX Version of the document
-	Raw  string
-	SPDX *spdx.Document
-}
-
-// Returns an SBOM per platform if built option `--sbom` was requested.
+// Returns an SBOM if built option `--sbom` was requested.
 // Returns an error if the build did not produce SBOMs.
-func (b *BuildArtifact) SBOMs(ctx context.Context) (string, error) {
+func (b *BuildArtifact) SBOM(ctx context.Context) (*File, error) {
 	if b.SBOMDir == nil {
-		return "", fmt.Errorf("sbom not generated; use --sbom")
+		return nil, fmt.Errorf("sbom not generated; use --sbom")
 	}
 
 	paths, err := b.SBOMDir.Entries(ctx)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	var sboms []*Document
+	var sboms []*File
 	for _, path := range paths {
 		sbomFile := b.SBOMDir.File(path)
-		buf, err := sbomFile.Contents(ctx)
-		if err != nil {
-			return "", err
-		}
-		document, err := spdx_json.Read(strings.NewReader(buf))
-		if err != nil {
-			return "", err
-		}
-		sboms = append(sboms, &Document{buf, document})
-		break
+		sboms = append(sboms, sbomFile)
+	}
+	if len(sboms) == 0 {
+		return nil, fmt.Errorf("no sboms found")
 	}
 
-	return sboms[0].Raw, nil
+	return sboms[0], nil
 }
 
 // example usage: `dagger call build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory .  --tags howdy/microservice:6.5.44  --load`
@@ -123,30 +108,27 @@ func (m *Depot) Build(ctx context.Context,
 	noCache Optional[bool],
 	// lint dockerfile
 	lint Optional[bool],
-	// name and tag for output image
-	tags Optional[[]string],
 	buildArgs Optional[[]string],
 	labels Optional[[]string],
 	outputs Optional[[]string],
 	provenance Optional[string],
 ) (*BuildArtifact, error) {
-	return build(
-		ctx,
-		depotVersion.GetOr(""),
-		token,
-		project,
-		directory,
-		dockerfile.GetOr(""),
-		platforms.GetOr([]Platform{}),
-		sbom.GetOr(false),
-		noCache.GetOr(false),
-		lint.GetOr(false),
-		tags.GetOr([]string{}),
-		buildArgs.GetOr([]string{}),
-		labels.GetOr([]string{}),
-		outputs.GetOr([]string{}),
-		provenance.GetOr(""),
-	)
+	d := &Depot{
+		DepotVersion: depotVersion.GetOr(""),
+		Token:        token,
+		Project:      project,
+		Directory:    directory,
+		Dockerfile:   dockerfile.GetOr(""),
+		Platforms:    platforms.GetOr([]Platform{}),
+		SBOM:         sbom.GetOr(false),
+		NoCache:      noCache.GetOr(false),
+		Lint:         lint.GetOr(false),
+		BuildArgs:    buildArgs.GetOr([]string{}),
+		Labels:       labels.GetOr([]string{}),
+		Outputs:      outputs.GetOr([]string{}),
+		Provenance:   provenance.GetOr(""),
+	}
+	return build(ctx, d)
 }
 
 // example usage: `dagger call bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl --load`
@@ -183,76 +165,57 @@ func (m *Depot) Bake(ctx context.Context,
 	)
 }
 
-func build(ctx context.Context,
-	depotVersion string,
-	token *Secret,
-	project string,
-	directory *Directory,
-	dockerfile string,
-	platforms []Platform,
-	sbom bool,
-	noCache bool,
-	lint bool,
-	tags []string,
-	buildArgs []string,
-	labels []string,
-	outputs []string,
-	provenance string,
-) (*BuildArtifact, error) {
+func build(ctx context.Context, d *Depot) (*BuildArtifact, error) {
 	args := []string{"/usr/bin/depot", "build", ".", "--metadata-file=metadata.json", "--save"}
 
-	for _, tag := range tags {
-		args = append(args, "--tag", tag)
-	}
-
-	for _, platform := range platforms {
+	for _, platform := range d.Platforms {
 		args = append(args, "--platform", string(platform))
 	}
 
-	for _, buildArg := range buildArgs {
+	for _, buildArg := range d.BuildArgs {
 		args = append(args, "--build-arg", buildArg)
 	}
 
-	for _, label := range labels {
+	for _, label := range d.Labels {
 		args = append(args, "--label", label)
 	}
 
-	for _, output := range outputs {
+	for _, output := range d.Outputs {
 		args = append(args, "--output", output)
 	}
 
-	if dockerfile != "" {
-		args = append(args, "--file", dockerfile)
+	if d.Dockerfile != "" {
+		args = append(args, "--file", d.Dockerfile)
 	}
 
-	if provenance != "" {
-		args = append(args, "--provenance", provenance)
+	if d.Provenance != "" {
+		args = append(args, "--provenance", d.Provenance)
 	}
-	if sbom {
+	if d.SBOM {
 		// produce and download sboms
 		args = append(args, "--sbom=true", "--sbom-dir=/mnt/sboms")
 	}
-	if noCache {
+	if d.NoCache {
 		args = append(args, "--no-cache")
 	}
-	if lint {
+	if d.Lint {
 		args = append(args, "--lint")
 	}
-	if depotVersion == "" {
+	if d.DepotVersion == "" {
 		var err error
-		depotVersion, err = latestDepotVersion()
+		d.DepotVersion, err = latestDepotVersion()
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	depotImage := fmt.Sprintf("public.ecr.aws/depot/cli:%s", depotVersion)
+	depotImage := fmt.Sprintf("public.ecr.aws/depot/cli:%s", d.DepotVersion)
 
 	container := dag.Container().
 		From(depotImage).
-		WithMountedDirectory("/mnt", directory).
-		WithEnvVariable("DEPOT_PROJECT_ID", project).
-		WithSecretVariable("DEPOT_TOKEN", token).
+		WithMountedDirectory("/mnt", d.Directory).
+		WithEnvVariable("DEPOT_PROJECT_ID", d.Project).
+		WithSecretVariable("DEPOT_TOKEN", d.Token).
 		WithWorkdir("/mnt")
 
 	exec := container.WithExec(args, ContainerWithExecOpts{SkipEntrypoint: true})
@@ -262,19 +225,19 @@ func build(ctx context.Context,
 		return nil, err
 	}
 
-	metadata := Metadata{}
+	metadata := metadata.Metadata{}
 	err = json.Unmarshal([]byte(buf), &metadata)
 	if err != nil {
 		return nil, err
 	}
 
 	artifact := &BuildArtifact{
-		Token:    token,
-		Project:  project,
+		Token:    d.Token,
+		Project:  d.Project,
 		Metadata: metadata,
 	}
 
-	if sbom {
+	if d.SBOM {
 		artifact.SBOMDir = exec.Directory("/mnt/sboms")
 	}
 
