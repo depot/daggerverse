@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"main/internal/metadata"
 	"net/http"
 	"runtime"
 )
@@ -47,7 +46,7 @@ type BuildArtifact struct {
 	// depot project id
 	Project string
 
-	Metadata metadata.Metadata
+	Metadata *Metadata
 	SBOMDir  *Directory
 }
 
@@ -225,7 +224,7 @@ func build(ctx context.Context, d *Depot) (*BuildArtifact, error) {
 		return nil, err
 	}
 
-	metadata := metadata.Metadata{}
+	metadata := Metadata{}
 	err = json.Unmarshal([]byte(buf), &metadata)
 	if err != nil {
 		return nil, err
@@ -234,7 +233,7 @@ func build(ctx context.Context, d *Depot) (*BuildArtifact, error) {
 	artifact := &BuildArtifact{
 		Token:    d.Token,
 		Project:  d.Project,
-		Metadata: metadata,
+		Metadata: &metadata,
 	}
 
 	if d.SBOM {
