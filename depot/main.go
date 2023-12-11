@@ -246,7 +246,7 @@ func build(ctx context.Context,
 		}
 	}
 
-	depotImage := fmt.Sprintf("ghcr.io/depot/cli:%s", depotVersion)
+	depotImage := fmt.Sprintf("public.ecr.aws/depot/cli:%s", depotVersion)
 
 	container := dag.Container().
 		From(depotImage).
