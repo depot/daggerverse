@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"runtime"
 	"strings"
+
+	spdx_json "github.com/spdx/tools-golang/json"
+	"github.com/spdx/tools-golang/spdx"
 )
 
 const (
@@ -16,8 +19,6 @@ const (
 type Depot struct {
 	// depot CLI version (default: latest)
 	DepotVersion string
-	// DockerHost is used for `--load`.
-	DockerHost string
 	// Depot token
 	Token *Secret
 	// Depot project id
@@ -29,8 +30,6 @@ type Depot struct {
 	// target platforms for build
 	Platforms []Platform
 
-	// load image into local docker daemon.
-	Load bool
 	// produce software bill of materials for image
 	SBOM bool
 	// lint dockerfile
@@ -38,13 +37,70 @@ type Depot struct {
 	// do not use layer cache when building the image
 	NoCache bool
 
-	// name and tag for output image
-	Tags      []string
 	BuildArgs []string
 	Labels    []string
 	Outputs   []string
 
 	Provenance string
+}
+
+type BuildArtifact struct {
+	// depot token
+	Token *Secret
+	// depot project id
+	Project string
+
+	Metadata Metadata
+	SBOMDir  *Directory
+}
+
+// Creates a container from the recently built image artifact.
+func (b *BuildArtifact) Container() *Container {
+	return dag.Container().WithRegistryAuth("registry.depot.dev", "x-token", b.Token).From(b.Metadata.ImageName)
+}
+
+// Returns the size in bytes of the image.
+// This is the sum of the size of the image config and all layers.
+// Note that this is the compressed layer size.  Images are stored compressed in the registry.
+// The on-disk, uncompressed size is not available.
+func (b *BuildArtifact) ImageBytes() int64 {
+	return b.Metadata.Size()
+}
+
+type Document struct {
+	// SPDX Version of the document
+	Raw  string
+	SPDX *spdx.Document
+}
+
+// Returns an SBOM per platform if built option `--sbom` was requested.
+// Returns an error if the build did not produce SBOMs.
+func (b *BuildArtifact) SBOMs(ctx context.Context) (string, error) {
+	if b.SBOMDir == nil {
+		return "", fmt.Errorf("sbom not generated; use --sbom")
+	}
+
+	paths, err := b.SBOMDir.Entries(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	var sboms []*Document
+	for _, path := range paths {
+		sbomFile := b.SBOMDir.File(path)
+		buf, err := sbomFile.Contents(ctx)
+		if err != nil {
+			return "", err
+		}
+		document, err := spdx_json.Read(strings.NewReader(buf))
+		if err != nil {
+			return "", err
+		}
+		sboms = append(sboms, &Document{buf, document})
+		break
+	}
+
+	return sboms[0].Raw, nil
 }
 
 // example usage: `dagger call build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory .  --tags howdy/microservice:6.5.44  --load`
@@ -61,10 +117,6 @@ func (m *Depot) Build(ctx context.Context,
 	dockerfile Optional[string],
 	// target platforms for build
 	platforms Optional[[]Platform],
-	// docker host (default: unix:///var/run/docker.sock)
-	dockerHost Optional[string],
-	// load image into local docker daemon.
-	load Optional[bool],
 	// produce software bill of materials for image
 	sbom Optional[bool],
 	// do not use layer cache when building the image
@@ -77,7 +129,7 @@ func (m *Depot) Build(ctx context.Context,
 	labels Optional[[]string],
 	outputs Optional[[]string],
 	provenance Optional[string],
-) (*Container, error) {
+) (*BuildArtifact, error) {
 	return build(
 		ctx,
 		depotVersion.GetOr(""),
@@ -86,8 +138,6 @@ func (m *Depot) Build(ctx context.Context,
 		directory,
 		dockerfile.GetOr(""),
 		platforms.GetOr([]Platform{}),
-		dockerHost.GetOr(""),
-		load.GetOr(false),
 		sbom.GetOr(false),
 		noCache.GetOr(false),
 		lint.GetOr(false),
@@ -111,10 +161,6 @@ func (m *Depot) Bake(ctx context.Context,
 	directory *Directory,
 	// path to bake definition file
 	bakeFile string,
-	// docker host (default: unix:///var/run/docker.sock)
-	dockerHost Optional[string],
-	// load image into local docker daemon.
-	load Optional[bool],
 	// produce software bill of materials for image
 	sbom Optional[bool],
 	// do not use layer cache when building the image
@@ -130,8 +176,6 @@ func (m *Depot) Bake(ctx context.Context,
 		project,
 		directory,
 		bakeFile,
-		dockerHost.GetOr(""),
-		load.GetOr(false),
 		sbom.GetOr(false),
 		noCache.GetOr(false),
 		lint.GetOr(false),
@@ -146,8 +190,6 @@ func build(ctx context.Context,
 	directory *Directory,
 	dockerfile string,
 	platforms []Platform,
-	dockerHost string,
-	load bool,
 	sbom bool,
 	noCache bool,
 	lint bool,
@@ -156,21 +198,8 @@ func build(ctx context.Context,
 	labels []string,
 	outputs []string,
 	provenance string,
-) (*Container, error) {
-	args := []string{"/usr/bin/depot", "build", "."}
-
-	if load {
-		args = append(args, "--load")
-	}
-	if sbom {
-		args = append(args, "--sbom=true")
-	}
-	if noCache {
-		args = append(args, "--no-cache")
-	}
-	if lint {
-		args = append(args, "--lint")
-	}
+) (*BuildArtifact, error) {
+	args := []string{"/usr/bin/depot", "build", ".", "--metadata-file=metadata.json", "--save"}
 
 	for _, tag := range tags {
 		args = append(args, "--tag", tag)
@@ -181,15 +210,15 @@ func build(ctx context.Context,
 	}
 
 	for _, buildArg := range buildArgs {
-		args = append(args, "--build-arg", string(buildArg))
+		args = append(args, "--build-arg", buildArg)
 	}
 
 	for _, label := range labels {
-		args = append(args, "--label", string(label))
+		args = append(args, "--label", label)
 	}
 
 	for _, output := range outputs {
-		args = append(args, "--output", string(output))
+		args = append(args, "--output", output)
 	}
 
 	if dockerfile != "" {
@@ -199,7 +228,16 @@ func build(ctx context.Context,
 	if provenance != "" {
 		args = append(args, "--provenance", provenance)
 	}
-
+	if sbom {
+		// produce and download sboms
+		args = append(args, "--sbom=true", "--sbom-dir=/mnt/sboms")
+	}
+	if noCache {
+		args = append(args, "--no-cache")
+	}
+	if lint {
+		args = append(args, "--lint")
+	}
 	if depotVersion == "" {
 		var err error
 		depotVersion, err = latestDepotVersion()
@@ -217,21 +255,30 @@ func build(ctx context.Context,
 		WithSecretVariable("DEPOT_TOKEN", token).
 		WithWorkdir("/mnt")
 
-	if dockerHost == "" {
-		dockerHost = DefaultDockerHost
+	exec := container.WithExec(args, ContainerWithExecOpts{SkipEntrypoint: true})
+	metadataFile := exec.File("metadata.json")
+	buf, err := metadataFile.Contents(ctx)
+	if err != nil {
+		return nil, err
 	}
 
-	switch {
-	case strings.HasPrefix(dockerHost, "unix://"):
-		dockerHost = strings.TrimPrefix(dockerHost, "unix://")
-
-		container = container.WithUnixSocket("/var/run/docker.sock", dag.Host().UnixSocket(dockerHost))
-		container = container.WithEnvVariable("DOCKER_HOST", "unix:///var/run/docker.sock")
-	case strings.HasPrefix(dockerHost, "tcp://"):
-		container = container.WithEnvVariable("DOCKER_HOST", dockerHost)
+	metadata := Metadata{}
+	err = json.Unmarshal([]byte(buf), &metadata)
+	if err != nil {
+		return nil, err
 	}
-	// WithExec must come after WithUnixSocket and WithEnvVariable please.
-	return container.WithExec(args, ContainerWithExecOpts{SkipEntrypoint: true}), nil
+
+	artifact := &BuildArtifact{
+		Token:    token,
+		Project:  project,
+		Metadata: metadata,
+	}
+
+	if sbom {
+		artifact.SBOMDir = exec.Directory("/mnt/sboms")
+	}
+
+	return artifact, nil
 }
 
 func bake(ctx context.Context,
@@ -240,8 +287,6 @@ func bake(ctx context.Context,
 	project string,
 	directory *Directory,
 	bakeFile string,
-	dockerHost string,
-	load bool,
 	sbom bool,
 	noCache bool,
 	lint bool,
@@ -249,9 +294,6 @@ func bake(ctx context.Context,
 ) (*Container, error) {
 	args := []string{"/usr/bin/depot", "bake", "-f", bakeFile}
 
-	if load {
-		args = append(args, "--load")
-	}
 	if sbom {
 		args = append(args, "--sbom=true")
 	}
@@ -283,19 +325,6 @@ func bake(ctx context.Context,
 		WithSecretVariable("DEPOT_TOKEN", token).
 		WithWorkdir("/mnt")
 
-	if dockerHost == "" {
-		dockerHost = DefaultDockerHost
-	}
-
-	switch {
-	case strings.HasPrefix(dockerHost, "unix://"):
-		dockerHost = strings.TrimPrefix(dockerHost, "unix://")
-
-		container = container.WithUnixSocket("/var/run/docker.sock", dag.Host().UnixSocket(dockerHost))
-		container = container.WithEnvVariable("DOCKER_HOST", "unix:///var/run/docker.sock")
-	case strings.HasPrefix(dockerHost, "tcp://"):
-		container = container.WithEnvVariable("DOCKER_HOST", dockerHost)
-	}
 	// WithExec must come after WithUnixSocket and WithEnvVariable please.
 	return container.WithExec(args, ContainerWithExecOpts{SkipEntrypoint: true}), nil
 }
@@ -325,4 +354,50 @@ func latestDepotVersion() (string, error) {
 	}
 
 	return version.Version, nil
+}
+
+type Metadata struct {
+	// This is the index of the image in the manifest list.
+	ContainerImageDescriptor OCIDescriptor `json:"containerimage.descriptor,omitempty"`
+	DepotBuild               DepotBuild    `json:"depot.build,omitempty"`
+	// Use this for the image name.
+	ImageName string `json:"image.name,omitempty"`
+	// Ignore Image configs for now.
+	Manifests []Manifest `json:"manifests,omitempty"`
+
+	// The metadata format is a bit of an odd duck.  If it is a multi-platform build, it will have
+	// a containerimage.buildinfo/PLATFORM section.  If it is a single platform build, it will have a
+	// containerimage.buildinfo section but no way to know the platform.
+	//ContainerimageBuildinfo           *struct{} `json:"containerimage.buildinfo,omitempty"`
+	//ContainerimageBuildinfoLinuxArm64 *struct{} `json:"containerimage.buildinfo/linux/arm64,omitempty"`
+	//ContainerimageBuildinfoLinuxAmd64 *struct{} `json:"containerimage.buildinfo/linux/amd64,omitempty"`
+}
+
+func (m *Metadata) Size() int64 {
+	size := m.ContainerImageDescriptor.Size
+	for _, manifest := range m.Manifests {
+		size += manifest.Config.Size
+		for _, layer := range manifest.Layers {
+			size += layer.Size
+		}
+	}
+	return size
+}
+
+type DepotBuild struct {
+	BuildID   string `json:"buildID,omitempty"`
+	ProjectID string `json:"projectID,omitempty"`
+}
+
+type Manifest struct {
+	SchemaVersion int             `json:"schemaVersion,omitempty"`
+	MediaType     string          `json:"mediaType,omitempty"`
+	Config        OCIDescriptor   `json:"config,omitempty"`
+	Layers        []OCIDescriptor `json:"layers,omitempty"`
+}
+
+type OCIDescriptor struct {
+	MediaType string `json:"mediaType,omitempty"`
+	Digest    string `json:"digest,omitempty"`
+	Size      int64  `json:"size,omitempty"`
 }
