@@ -84,7 +84,7 @@ func (b *BuildArtifact) SBOM(ctx context.Context) (*File, error) {
 	return sboms[0], nil
 }
 
-// example usage: `dagger call build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory .  --tags howdy/microservice:6.5.44  --load`
+// example usage: `dagger call build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --lint container`
 func (m *Depot) Build(ctx context.Context,
 	// depot CLI version (default: latest)
 	depotVersion Optional[string],
@@ -127,7 +127,7 @@ func (m *Depot) Build(ctx context.Context,
 	return build(ctx, d)
 }
 
-// example usage: `dagger call bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl --load`
+// example usage: `dagger call bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl`
 func (m *Depot) Bake(ctx context.Context,
 	// depot CLI version (default: latest)
 	depotVersion Optional[string],
@@ -276,7 +276,7 @@ func bake(ctx context.Context,
 		}
 	}
 
-	depotImage := fmt.Sprintf("ghcr.io/depot/cli:%s", depotVersion)
+	depotImage := fmt.Sprintf("public.ecr.aws/depot/cli:%s", depotVersion)
 
 	container := dag.Container().
 		From(depotImage).
