@@ -8,10 +8,6 @@ import (
 	"runtime"
 )
 
-const (
-	DefaultDockerHost = "unix:///var/run/docker.sock"
-)
-
 type Depot struct {
 	// depot CLI version (default: latest)
 	DepotVersion string
@@ -46,13 +42,14 @@ type BuildArtifact struct {
 	// depot project id
 	Project string
 
-	Metadata *Metadata
-	SBOMDir  *Directory
+	SBOMDir   *Directory
+	ImageName string
+	Size      int64
 }
 
 // Creates a container from the recently built image artifact.
 func (b *BuildArtifact) Container() *Container {
-	return dag.Container().WithRegistryAuth("registry.depot.dev", "x-token", b.Token).From(b.Metadata.ImageName)
+	return dag.Container().WithRegistryAuth("registry.depot.dev", "x-token", b.Token).From(b.ImageName)
 }
 
 // Returns the size in bytes of the image.
@@ -60,7 +57,7 @@ func (b *BuildArtifact) ImageBytes() int64 {
 	// This is the sum of the size of the image config and all layers.
 	// Note that this is the compressed layer size.  Images are stored compressed in the registry.
 	// The on-disk, uncompressed size is not available.
-	return b.Metadata.Size()
+	return b.Size
 }
 
 // Returns an SBOM if built option `--sbom` was requested.
@@ -231,9 +228,10 @@ func build(ctx context.Context, d *Depot) (*BuildArtifact, error) {
 	}
 
 	artifact := &BuildArtifact{
-		Token:    d.Token,
-		Project:  d.Project,
-		Metadata: &metadata,
+		Token:     d.Token,
+		Project:   d.Project,
+		ImageName: metadata.ImageName,
+		Size:      metadata.Size(),
 	}
 
 	if d.SBOM {

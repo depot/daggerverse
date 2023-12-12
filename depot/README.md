@@ -4,18 +4,38 @@
 
 Daggerized version of [depot](https://depot.dev).
 
-## Example
+## CLI Examples
 
-### build
+### Build and run container
 
 ```sh
 dagger call -m github.com/depot/daggerverse/depot \
-  build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --tags howdy/microservice:6.5.44  --load
+  build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . container
 ```
 
-### bake
+### Build image and print image size in bytes
 
 ```sh
 dagger call -m github.com/depot/daggerverse/depot \
-  bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl --load
+  build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . image-bytes
+```
+
+### Build image and print software bill of materials (SBOM)
+
+```sh
+dagger call -m github.com/depot/daggerverse/depot \
+  build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --sbom sbom
+```
+
+### Run bake to build many containers.
+
+```sh
+dagger call -m github.com/depot/daggerverse/depot \
+  bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl
+```
+
+## API Examples
+
+```go
+
 ```
