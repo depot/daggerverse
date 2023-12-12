@@ -62,8 +62,9 @@ func (m *MyModule) PublishImageIfSmall(ctx context.Context, depotToken *Secret, 
 }
 ```
 
-Here is an example using gets the image SBOM and checks for an CVEs using
-Anchore's [grype](https://github.com/anchore/grype)
+Here is an example using gets the image SBOM and uses
+Anchore's [grype](https://github.com/anchore/grype) to fail if any
+high-severity CVEs are found.
 
 ```go
 // example usage `dagger call check-cves --depot-token $DEPOT_TOKEN --project $DEPOT_PROJECT_ID --directory .`
@@ -74,7 +75,7 @@ func (m *MyModule) CheckCVEs(ctx context.Context, depotToken *Secret, project st
 		Container().
 		From("anchore/grype:latest").
 		WithFile("/mnt/sbom.spdx.json", sbomFile).
-		WithExec([]string{"sbom:/mnt/sbom.spdx.json"}).
+		WithExec([]string{"sbom:/mnt/sbom.spdx.json", "--fail-on=high"}).
 		Stdout(ctx)
 }
 ```
