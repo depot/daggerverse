@@ -28,6 +28,8 @@ type Depot struct {
 	Lint bool
 	// do not use layer cache when building the image
 	NoCache bool
+	// do not save the image to the depot ephemeral registry
+	NoSave bool
 
 	BuildArgs []string
 	Labels    []string
@@ -102,6 +104,8 @@ func (m *Depot) Build(ctx context.Context,
 	sbom Optional[bool],
 	// do not use layer cache when building the image
 	noCache Optional[bool],
+	// do not save the image to the depot ephemeral registry
+	noSave Optional[bool],
 	// lint dockerfile
 	lint Optional[bool],
 	buildArgs Optional[[]string],
@@ -118,6 +122,7 @@ func (m *Depot) Build(ctx context.Context,
 		Platforms:    platforms.GetOr([]Platform{}),
 		SBOM:         sbom.GetOr(false),
 		NoCache:      noCache.GetOr(false),
+		NoSave:       noSave.GetOr(false),
 		Lint:         lint.GetOr(false),
 		BuildArgs:    buildArgs.GetOr([]string{}),
 		Labels:       labels.GetOr([]string{}),
@@ -162,7 +167,11 @@ func (m *Depot) Bake(ctx context.Context,
 }
 
 func build(ctx context.Context, d *Depot) (*BuildArtifact, error) {
-	args := []string{"/usr/bin/depot", "build", ".", "--metadata-file=metadata.json", "--save"}
+	args := []string{"/usr/bin/depot", "build", ".", "--metadata-file=metadata.json"}
+	// Always save unless one specifies --no-save.
+	if !d.NoSave {
+		args = append(args, "--save")
+	}
 
 	for _, platform := range d.Platforms {
 		args = append(args, "--platform", string(platform))

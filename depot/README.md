@@ -62,7 +62,7 @@ func (m *MyModule) PublishImageIfSmall(ctx context.Context, depotToken *Secret, 
 }
 ```
 
-Here is an example using gets the image SBOM and uses
+Here is an example that builds an image, gets image's SBOM and uses
 Anchore's [grype](https://github.com/anchore/grype) to fail if any
 high-severity CVEs are found.
 
