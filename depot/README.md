@@ -36,6 +36,26 @@ dagger call -m github.com/depot/daggerverse/depot \
 
 ## API Examples
 
-```go
+### Go
 
+This builds an image and publishes if size is less than 100MB.
+
+```sh
+dagger mod install github.com/depot/daggerverse/depot
+```
+
+```go
+// example usage: `dagger call publish-image-if-small --directory . --depot-token $DEPOT_TOKEN --project $DEPOT_PROJECT_ID ----max-bytes 1000000 --image-address ghcr.io/my-project/my-image:latest`
+func (m *MyModule) PublishImageIfSmall(ctx context.Context, depotToken *Secret, project string, directory *Directory, maxBytes int, imageAddress string) (string, error) {
+	artifact := dag.Depot().Build(depotToken, project, directory)
+	bytes, err := artifact.ImageBytes(ctx)
+	if err != nil {
+		return "", err
+	}
+	if bytes > maxBytes {
+		return "", fmt.Errorf("image is too large: %d bytes", bytes)
+	}
+
+	return artifact.Container().Publish(ctx, imageAddress)
+}
 ```
