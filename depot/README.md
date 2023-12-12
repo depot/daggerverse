@@ -38,11 +38,13 @@ dagger call -m github.com/depot/daggerverse/depot \
 
 ### Go
 
-This builds an image and publishes if size is less than 100MB.
+First, install the module.
 
 ```sh
 dagger mod install github.com/depot/daggerverse/depot
 ```
+
+This example builds an image and publishes if size is less than 100MB.
 
 ```go
 // example usage: `dagger call publish-image-if-small --directory . --depot-token $DEPOT_TOKEN --project $DEPOT_PROJECT_ID ----max-bytes 1000000 --image-address ghcr.io/my-project/my-image:latest`
@@ -57,5 +59,21 @@ func (m *MyModule) PublishImageIfSmall(ctx context.Context, depotToken *Secret, 
 	}
 
 	return artifact.Container().Publish(ctx, imageAddress)
+}
+```
+
+Here is an example using gets the image SBOM and checks for an CVEs using
+Anchore's [grype](https://github.com/anchore/grype)
+
+```go
+func (m *MyModule) CheckCVEs(ctx context.Context, depotToken *Secret, project string, directory *Directory) (string, error) {
+	artifact := dag.Depot().Build(depotToken, project, directory, DepotBuildOpts{Sbom: true})
+	sbomFile := artifact.Sbom()
+	return dag.
+		Container().
+		From("anchore/grype:latest").
+		WithFile("/mnt/sbom.spdx.json", sbomFile).
+		WithExec([]string{"sbom:/mnt/sbom.spdx.json"}).
+		Stdout(ctx)
 }
 ```
