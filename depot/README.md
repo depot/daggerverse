@@ -66,6 +66,7 @@ Here is an example using gets the image SBOM and checks for an CVEs using
 Anchore's [grype](https://github.com/anchore/grype)
 
 ```go
+// example usage `dagger call check-cves --depot-token $DEPOT_TOKEN --project $DEPOT_PROJECT_ID --directory .`
 func (m *MyModule) CheckCVEs(ctx context.Context, depotToken *Secret, project string, directory *Directory) (string, error) {
 	artifact := dag.Depot().Build(depotToken, project, directory, DepotBuildOpts{Sbom: true})
 	sbomFile := artifact.Sbom()
