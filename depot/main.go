@@ -220,6 +220,7 @@ func build(ctx context.Context, d *Depot) (*BuildArtifact, error) {
 		From(depotImage).
 		WithMountedDirectory("/mnt", d.Directory).
 		WithEnvVariable("DEPOT_PROJECT_ID", d.Project).
+		WithEnvVariable("DEPOT_DISABLE_OTEL", "true").
 		WithSecretVariable("DEPOT_TOKEN", d.Token).
 		WithWorkdir("/mnt")
 
