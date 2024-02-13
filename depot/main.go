@@ -88,8 +88,9 @@ func (b *BuildArtifact) SBOM(ctx context.Context) (*File, error) {
 
 // example usage: `dagger call build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --lint container`
 func (m *Depot) Build(ctx context.Context,
-	// depot CLI version (default: latest)
-	depotVersion Optional[string],
+	// depot CLI version
+	// +optional
+	depotVersion string,
 	// depot token
 	token *Secret,
 	// depot project id
@@ -97,45 +98,64 @@ func (m *Depot) Build(ctx context.Context,
 	// source context directory for build
 	directory *Directory,
 	// path to dockerfile (default: Dockerfile)
-	dockerfile Optional[string],
+	// +optional
+	dockerfile string,
 	// target platforms for build
-	platforms Optional[[]Platform],
+	// +optional
+	// +default=[]Platform{}
+	platforms []Platform,
 	// produce software bill of materials for image
-	sbom Optional[bool],
+	// +optional
+	// +default=false
+	sbom bool,
 	// do not use layer cache when building the image
-	noCache Optional[bool],
+	// +optional
+	// +default=false
+	noCache bool,
 	// do not save the image to the depot ephemeral registry
-	noSave Optional[bool],
+	// +optional
+	// +default=false
+	noSave bool,
 	// lint dockerfile
-	lint Optional[bool],
-	buildArgs Optional[[]string],
-	labels Optional[[]string],
-	outputs Optional[[]string],
-	provenance Optional[string],
+	// +optional
+	// +default=false
+	lint bool,
+	// +optional
+	// +default=[]string{}
+	buildArgs []string,
+	// +optional
+	// +default=[]string{}
+	labels []string,
+	// +optional
+	// +default=[]string{}
+	outputs []string,
+	// +optional
+	provenance string,
 ) (*BuildArtifact, error) {
 	d := &Depot{
-		DepotVersion: depotVersion.GetOr(""),
+		DepotVersion: depotVersion,
 		Token:        token,
 		Project:      project,
 		Directory:    directory,
-		Dockerfile:   dockerfile.GetOr(""),
-		Platforms:    platforms.GetOr([]Platform{}),
-		SBOM:         sbom.GetOr(false),
-		NoCache:      noCache.GetOr(false),
-		NoSave:       noSave.GetOr(false),
-		Lint:         lint.GetOr(false),
-		BuildArgs:    buildArgs.GetOr([]string{}),
-		Labels:       labels.GetOr([]string{}),
-		Outputs:      outputs.GetOr([]string{}),
-		Provenance:   provenance.GetOr(""),
+		Dockerfile:   dockerfile,
+		Platforms:    platforms,
+		SBOM:         sbom,
+		NoCache:      noCache,
+		NoSave:       noSave,
+		Lint:         lint,
+		BuildArgs:    buildArgs,
+		Labels:       labels,
+		Outputs:      outputs,
+		Provenance:   provenance,
 	}
 	return build(ctx, d)
 }
 
 // example usage: `dagger call bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl`
 func (m *Depot) Bake(ctx context.Context,
-	// depot CLI version (default: latest)
-	depotVersion Optional[string],
+	// depot CLI version
+	// +optional
+	depotVersion string,
 	// depot token
 	token *Secret,
 	// depot project id
@@ -145,24 +165,31 @@ func (m *Depot) Bake(ctx context.Context,
 	// path to bake definition file
 	bakeFile string,
 	// produce software bill of materials for image
-	sbom Optional[bool],
+	// +optional
+	// +default=false
+	sbom bool,
 	// do not use layer cache when building the image
-	noCache Optional[bool],
-	provenance Optional[string],
+	// +optional
+	// +default=false
+	noCache bool,
 	// lint dockerfile
-	lint Optional[bool],
+	// +optional
+	// +default=false
+	lint bool,
+	// +optional
+	provenance string,
 ) (*Container, error) {
 	return bake(
 		ctx,
-		depotVersion.GetOr(""),
+		depotVersion,
 		token,
 		project,
 		directory,
 		bakeFile,
-		sbom.GetOr(false),
-		noCache.GetOr(false),
-		lint.GetOr(false),
-		provenance.GetOr(""),
+		sbom,
+		noCache,
+		lint,
+		provenance,
 	)
 }
 
