@@ -1,6 +1,4 @@
 // Depot is a cloud-accelerated container build service at https://depot.dev.
-package main
-
 // ### Build and run container
 //
 // ```sh
@@ -74,6 +72,8 @@ package main
 // 		Stdout(ctx)
 // }
 // ```
+
+package main
 
 import (
 	"context"
