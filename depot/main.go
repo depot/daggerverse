@@ -1,3 +1,4 @@
+// Depot is a cloud-accelerated container build service at https://depot.dev.
 package main
 
 import (
@@ -8,35 +9,7 @@ import (
 	"runtime"
 )
 
-type Depot struct {
-	// depot CLI version (default: latest)
-	DepotVersion string
-	// Depot token
-	Token *Secret
-	// Depot project id
-	Project string
-	// Source context directory for build
-	Directory *Directory
-	// Path to dockerfile (default: Dockerfile)
-	Dockerfile string
-	// Platforms are architecture and OS combinations for which to build the image.
-	Platforms []Platform
-
-	// produce software bill of materials for image
-	SBOM bool
-	// lint dockerfile
-	Lint bool
-	// do not use layer cache when building the image
-	NoCache bool
-	// do not save the image to the depot ephemeral registry
-	NoSave bool
-
-	BuildArgs []string
-	Labels    []string
-	Outputs   []string
-
-	Provenance string
-}
+type Depot struct{}
 
 type BuildArtifact struct {
 	// depot token
@@ -86,71 +59,143 @@ func (b *BuildArtifact) SBOM(ctx context.Context) (*File, error) {
 	return sboms[0], nil
 }
 
-// example usage: `dagger call build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --lint container`
+// Build builds a container image artifact from a Dockerfile using https://depot.dev.
+//
+// Example usage: `dagger call build --token env:DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --lint container`
 func (m *Depot) Build(ctx context.Context,
-	// depot CLI version
+	// Depot CLI version
 	// +optional
 	depotVersion string,
-	// depot token
+	// Depot token
 	token *Secret,
-	// depot project id
+	// Depot project id
 	project string,
-	// source context directory for build
+	// Source context directory for build
 	directory *Directory,
-	// path to dockerfile (default: Dockerfile)
+	// Path to dockerfile
 	// +optional
+	// +default="Dockerfile"
 	dockerfile string,
-	// target platforms for build
+	// Platforms are architecture and OS combinations for which to build the image.
 	// +optional
 	// +default=null
 	platforms []Platform,
-	// produce software bill of materials for image
+	// Produce software bill of materials for image
 	// +optional
 	// +default=false
 	sbom bool,
-	// do not use layer cache when building the image
+	// D not use layer cache when building the image
 	// +optional
 	// +default=false
 	noCache bool,
-	// do not save the image to the depot ephemeral registry
+	// Do not save the image to the depot ephemeral registry
 	// +optional
 	// +default=false
 	noSave bool,
-	// lint dockerfile
+	// Lint dockerfile
 	// +optional
 	// +default=false
 	lint bool,
 	// +optional
 	// +default=null
 	buildArgs []string,
+	// Labels to apply to the image
 	// +optional
 	// +default=null
 	labels []string,
+	// Outputs override the default
 	// +optional
 	// +default=null
 	outputs []string,
 	// +optional
 	provenance string,
 ) (*BuildArtifact, error) {
-	d := &Depot{
-		DepotVersion: depotVersion,
-		Token:        token,
-		Project:      project,
-		Directory:    directory,
-		Dockerfile:   dockerfile,
-		Platforms:    platforms,
-		SBOM:         sbom,
-		NoCache:      noCache,
-		NoSave:       noSave,
-		Lint:         lint,
-		BuildArgs:    buildArgs,
-		Labels:       labels,
-		Outputs:      outputs,
-		Provenance:   provenance,
+	args := []string{"/usr/bin/depot", "build", ".", "--metadata-file=metadata.json"}
+	// Always save unless one specifies --no-save.
+	if !noSave {
+		args = append(args, "--save")
 	}
-	return build(ctx, d)
+
+	for _, platform := range platforms {
+		args = append(args, "--platform", string(platform))
+	}
+
+	for _, buildArg := range buildArgs {
+		args = append(args, "--build-arg", buildArg)
+	}
+
+	for _, label := range labels {
+		args = append(args, "--label", label)
+	}
+
+	for _, output := range outputs {
+		args = append(args, "--output", output)
+	}
+
+	if dockerfile != "" {
+		args = append(args, "--file", dockerfile)
+	}
+
+	if provenance != "" {
+		args = append(args, "--provenance", provenance)
+	}
+	if sbom {
+		// produce and download sboms
+		args = append(args, "--sbom=true", "--sbom-dir=/mnt/sboms")
+	}
+	if noCache {
+		args = append(args, "--no-cache")
+	}
+	if lint {
+		args = append(args, "--lint")
+	}
+	if depotVersion == "" {
+		var err error
+		depotVersion, err = latestDepotVersion()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	depotImage := fmt.Sprintf("public.ecr.aws/depot/cli:%s", depotVersion)
+
+	container := dag.Container().
+		From(depotImage).
+		WithMountedDirectory("/mnt", directory).
+		WithEnvVariable("DEPOT_PROJECT_ID", project).
+		WithEnvVariable("DEPOT_DISABLE_OTEL", "true").
+		WithSecretVariable("DEPOT_TOKEN", token).
+		WithWorkdir("/mnt")
+
+	exec := container.WithExec(args, ContainerWithExecOpts{SkipEntrypoint: true})
+	metadataFile := exec.File("metadata.json")
+	buf, err := metadataFile.Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	metadata := Metadata{}
+	err = json.Unmarshal([]byte(buf), &metadata)
+	if err != nil {
+		return nil, err
+	}
+
+	artifact := &BuildArtifact{
+		Token:     token,
+		Project:   project,
+		ImageName: metadata.ImageName,
+		Size:      metadata.Size(),
+	}
+
+	if sbom {
+		artifact.SBOMDir = exec.Directory("/mnt/sboms")
+	}
+
+	return artifact, nil
 }
 
+// Bake builds many containers using https://depot.dev.
+//
 // example usage: `dagger call bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl`
 func (m *Depot) Bake(ctx context.Context,
 	// depot CLI version
@@ -191,91 +236,6 @@ func (m *Depot) Bake(ctx context.Context,
 		lint,
 		provenance,
 	)
-}
-
-func build(ctx context.Context, d *Depot) (*BuildArtifact, error) {
-	args := []string{"/usr/bin/depot", "build", ".", "--metadata-file=metadata.json"}
-	// Always save unless one specifies --no-save.
-	if !d.NoSave {
-		args = append(args, "--save")
-	}
-
-	for _, platform := range d.Platforms {
-		args = append(args, "--platform", string(platform))
-	}
-
-	for _, buildArg := range d.BuildArgs {
-		args = append(args, "--build-arg", buildArg)
-	}
-
-	for _, label := range d.Labels {
-		args = append(args, "--label", label)
-	}
-
-	for _, output := range d.Outputs {
-		args = append(args, "--output", output)
-	}
-
-	if d.Dockerfile != "" {
-		args = append(args, "--file", d.Dockerfile)
-	}
-
-	if d.Provenance != "" {
-		args = append(args, "--provenance", d.Provenance)
-	}
-	if d.SBOM {
-		// produce and download sboms
-		args = append(args, "--sbom=true", "--sbom-dir=/mnt/sboms")
-	}
-	if d.NoCache {
-		args = append(args, "--no-cache")
-	}
-	if d.Lint {
-		args = append(args, "--lint")
-	}
-	if d.DepotVersion == "" {
-		var err error
-		d.DepotVersion, err = latestDepotVersion()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	depotImage := fmt.Sprintf("public.ecr.aws/depot/cli:%s", d.DepotVersion)
-
-	container := dag.Container().
-		From(depotImage).
-		WithMountedDirectory("/mnt", d.Directory).
-		WithEnvVariable("DEPOT_PROJECT_ID", d.Project).
-		WithEnvVariable("DEPOT_DISABLE_OTEL", "true").
-		WithSecretVariable("DEPOT_TOKEN", d.Token).
-		WithWorkdir("/mnt")
-
-	exec := container.WithExec(args, ContainerWithExecOpts{SkipEntrypoint: true})
-	metadataFile := exec.File("metadata.json")
-	buf, err := metadataFile.Contents(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	metadata := Metadata{}
-	err = json.Unmarshal([]byte(buf), &metadata)
-	if err != nil {
-		return nil, err
-	}
-
-	artifact := &BuildArtifact{
-		Token:     d.Token,
-		Project:   d.Project,
-		ImageName: metadata.ImageName,
-		Size:      metadata.Size(),
-	}
-
-	if d.SBOM {
-		artifact.SBOMDir = exec.Directory("/mnt/sboms")
-	}
-
-	return artifact, nil
 }
 
 func bake(ctx context.Context,
