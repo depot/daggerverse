@@ -1,6 +1,6 @@
 # Module: Depot
 
-![dagger-min-version](https://img.shields.io/badge/dagger%20version-v0.9.3-yellow)
+![dagger-min-version](https://img.shields.io/badge/dagger%20version-v0.10.0-yellow)
 
 Daggerized version of [depot](https://depot.dev).
 
@@ -10,28 +10,28 @@ Daggerized version of [depot](https://depot.dev).
 
 ```sh
 dagger call -m github.com/depot/daggerverse/depot \
-  build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . container
+  build --token env:DEPOT_TOKEN --project $DEPOT_PROJECT --directory . container
 ```
 
 ### Build image and print image size in bytes
 
 ```sh
 dagger call -m github.com/depot/daggerverse/depot \
-  build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . image-bytes
+  build --token env:DEPOT_TOKEN --project $DEPOT_PROJECT --directory . image-bytes
 ```
 
 ### Build image and print software bill of materials (SBOM)
 
 ```sh
 dagger call -m github.com/depot/daggerverse/depot \
-  build --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --sbom sbom
+  build --token env:DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --sbom sbom
 ```
 
 ### Run bake to build many containers.
 
 ```sh
 dagger call -m github.com/depot/daggerverse/depot \
-  bake --token $DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl
+  bake --token env:DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl
 ```
 
 ## API Examples
@@ -47,7 +47,7 @@ dagger mod install github.com/depot/daggerverse/depot
 This example builds an image and publishes if size is less than 100MB.
 
 ```go
-// example usage: `dagger call publish-image-if-small --directory . --depot-token $DEPOT_TOKEN --project $DEPOT_PROJECT_ID ----max-bytes 1000000 --image-address ghcr.io/my-project/my-image:latest`
+// example usage: `dagger call publish-image-if-small --directory . --depot-token env:DEPOT_TOKEN --project $DEPOT_PROJECT_ID ----max-bytes 1000000 --image-address ghcr.io/my-project/my-image:latest`
 func (m *MyModule) PublishImageIfSmall(ctx context.Context, depotToken *Secret, project string, directory *Directory, maxBytes int, imageAddress string) (string, error) {
 	artifact := dag.Depot().Build(depotToken, project, directory)
 	bytes, err := artifact.ImageBytes(ctx)
@@ -67,7 +67,7 @@ Anchore's [grype](https://github.com/anchore/grype) to fail if any
 high-severity CVEs are found.
 
 ```go
-// example usage `dagger call check-cves --depot-token $DEPOT_TOKEN --project $DEPOT_PROJECT_ID --directory .`
+// example usage `dagger call check-cves --depot-token env:DEPOT_TOKEN --project $DEPOT_PROJECT_ID --directory .`
 func (m *MyModule) CheckCVEs(ctx context.Context, depotToken *Secret, project string, directory *Directory) (string, error) {
 	artifact := dag.Depot().Build(depotToken, project, directory, DepotBuildOpts{Sbom: true})
 	sbomFile := artifact.Sbom()
