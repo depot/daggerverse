@@ -19,7 +19,7 @@ type Depot struct {
 	Directory *Directory
 	// Path to dockerfile (default: Dockerfile)
 	Dockerfile string
-	// target platforms for build
+	// Platforms are architecture and OS combinations for which to build the image.
 	Platforms []Platform
 
 	// produce software bill of materials for image
@@ -102,7 +102,7 @@ func (m *Depot) Build(ctx context.Context,
 	dockerfile string,
 	// target platforms for build
 	// +optional
-	// +default=[]Platform{}
+	// +default=null
 	platforms []Platform,
 	// produce software bill of materials for image
 	// +optional
@@ -121,13 +121,13 @@ func (m *Depot) Build(ctx context.Context,
 	// +default=false
 	lint bool,
 	// +optional
-	// +default=[]string{}
+	// +default=null
 	buildArgs []string,
 	// +optional
-	// +default=[]string{}
+	// +default=null
 	labels []string,
 	// +optional
-	// +default=[]string{}
+	// +default=null
 	outputs []string,
 	// +optional
 	provenance string,
