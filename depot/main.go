@@ -1,62 +1,12 @@
-// Depot is a cloud-accelerated container build service at https://depot.dev.
+// Depot is a remote container build service with native Intel & Arm support and persistent layer caching for blazing fast builds.
 //
-// Build and run container
+// The Depot module can be used to route any container image build to our remote build service. You can use it to build container images on
+// fast native Intel & Arm CPUs with persistent layer cache on NVMe disks. We have functions for both depot build and depot bake. 
 //
-// dagger call -m github.com/depot/daggerverse/depot \
-//   build --token env:DEPOT_TOKEN --project $DEPOT_PROJECT --directory . container
-//
-// Build image and print image size in bytes
-//
-// dagger call -m github.com/depot/daggerverse/depot \
-//   build --token env:DEPOT_TOKEN --project $DEPOT_PROJECT --directory . image-bytes
-//
-// Build image and print software bill of materials (SBOM)
-//
-// dagger call -m github.com/depot/daggerverse/depot \
-//   build --token env:DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --sbom sbom
-//
-// Run bake to build many containers.
-//
-// dagger call -m github.com/depot/daggerverse/depot \
-//   bake --token env:DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl
-//
-// Go API Examples
-//
-// First, install the module.
-//
-// dagger mod install github.com/depot/daggerverse/depot
-//
-// This example builds an image and publishes if size is less than 100MB.
-//
-// // example usage: `dagger call publish-image-if-small --directory . --depot-token env:DEPOT_TOKEN --project $DEPOT_PROJECT_ID ----max-bytes 1000000 --image-address ghcr.io/my-project/my-image:latest`
-// func (m *MyModule) PublishImageIfSmall(ctx context.Context, depotToken *Secret, project string, directory *Directory, maxBytes int, imageAddress string) (string, error) {
-// 	artifact := dag.Depot().Build(depotToken, project, directory)
-// 	bytes, err := artifact.ImageBytes(ctx)
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	if bytes > maxBytes {
-// 		return "", fmt.Errorf("image is too large: %d bytes", bytes)
-// 	}
-//
-// 	return artifact.Container().Publish(ctx, imageAddress)
-// }
-//
-// Here is an example that builds an image, gets image's SBOM and uses
-// Anchore's [grype](https://github.com/anchore/grype) to fail if any
-// high-severity CVEs are found.
-//
-// // example usage `dagger call check-cves --depot-token env:DEPOT_TOKEN --project $DEPOT_PROJECT_ID --directory .`
-// func (m *MyModule) CheckCVEs(ctx context.Context, depotToken *Secret, project string, directory *Directory) (string, error) {
-// 	artifact := dag.Depot().Build(depotToken, project, directory, DepotBuildOpts{Sbom: true})
-// 	sbomFile := artifact.Sbom()
-// 	return dag.
-// 		Container().
-// 		From("anchore/grype:latest").
-// 		WithFile("/mnt/sbom.spdx.json", sbomFile).
-// 		WithExec([]string{"sbom:/mnt/sbom.spdx.json", "--fail-on=high"}).
-// 		Stdout(ctx)
-// }
+// With build, we build your container image for the Dockerfile you specify and return you the built container to use in your pipeline.
+// With bake, you can pass in your bake file and we will build all of the targets in your bake file concurrently.
+// 
+// For more examples of cool things you can do with Dagger + Depot, check out our README in our Daggerverse repo.
 
 package main
 
