@@ -1,4 +1,12 @@
-// Depot is a cloud-accelerated container build service at https://depot.dev.
+// Depot is a remote container build service with native Intel & Arm support and persistent layer caching for blazing fast builds.
+//
+// The Depot module can be used to route any container image build to our remote build service. You can use it to build container images on
+// fast native Intel & Arm CPUs with persistent layer cache on NVMe disks. We have functions for both depot build and depot bake. 
+//
+// With build, we build your container image for the Dockerfile you specify and return you the built container to use in your pipeline.
+// With bake, you can pass in your bake file and we will build all of the targets in your bake file concurrently.
+// 
+// For more examples of cool things you can do with Dagger + Depot, check out our README in our Daggerverse repo.
 
 package main
 
