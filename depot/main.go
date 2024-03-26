@@ -1,11 +1,11 @@
 // Depot is a remote container build service with native Intel & Arm support and persistent layer caching for blazing fast builds.
 //
 // The Depot module can be used to route any container image build to our remote build service. You can use it to build container images on
-// fast native Intel & Arm CPUs with persistent layer cache on NVMe disks. We have functions for both depot build and depot bake. 
+// fast native Intel & Arm CPUs with persistent layer cache on NVMe disks. We have functions for both depot build and depot bake.
 //
 // With build, we build your container image for the Dockerfile you specify and return you the built container to use in your pipeline.
 // With bake, you can pass in your bake file and we will build all of the targets in your bake file concurrently.
-// 
+//
 // For more examples of cool things you can do with Dagger + Depot, check out our README in our Daggerverse repo.
 
 package main
@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strings"
 )
 
 type Depot struct{}
@@ -25,6 +26,8 @@ type BuildArtifact struct {
 	Token *Secret
 	// depot project id
 	Project string
+
+	Target string
 
 	SBOMDir   *Directory
 	ImageName string
@@ -58,9 +61,22 @@ func (b *BuildArtifact) SBOM(ctx context.Context) (*File, error) {
 
 	var sboms []*File
 	for _, path := range paths {
-		sbomFile := b.SBOMDir.File(path)
-		sboms = append(sboms, sbomFile)
+		if !strings.HasSuffix(path, ".spdx.json") {
+			continue
+		}
+		if strings.Contains(path, "sbom.spdx.json") {
+			sbomFile := b.SBOMDir.File(path)
+			sboms = append(sboms, sbomFile)
+			continue
+		}
+
+		if b.Target != "" && strings.Contains(path, b.Target) {
+			sbomFile := b.SBOMDir.File(path)
+			sboms = append(sboms, sbomFile)
+			continue
+		}
 	}
+
 	if len(sboms) == 0 {
 		return nil, fmt.Errorf("no sboms found")
 	}
@@ -183,7 +199,7 @@ func (m *Depot) Build(ctx context.Context,
 		return nil, err
 	}
 
-	metadata := Metadata{}
+	metadata := BuildMetadata{}
 	err = json.Unmarshal([]byte(buf), &metadata)
 	if err != nil {
 		return nil, err
@@ -226,42 +242,26 @@ func (m *Depot) Bake(ctx context.Context,
 	// +optional
 	// +default=false
 	noCache bool,
+	// Do not save the image to the depot ephemeral registry
+	// +optional
+	// +default=false
+	noSave bool,
 	// lint dockerfile
 	// +optional
 	// +default=false
 	lint bool,
 	// +optional
 	provenance string,
-) (*Container, error) {
-	return bake(
-		ctx,
-		depotVersion,
-		token,
-		project,
-		directory,
-		bakeFile,
-		sbom,
-		noCache,
-		lint,
-		provenance,
-	)
-}
-
-func bake(ctx context.Context,
-	depotVersion string,
-	token *Secret,
-	project string,
-	directory *Directory,
-	bakeFile string,
-	sbom bool,
-	noCache bool,
-	lint bool,
-	provenance string,
-) (*Container, error) {
-	args := []string{"/usr/bin/depot", "bake", "-f", bakeFile}
+) (*Artifacts, error) {
+	args := []string{"/usr/bin/depot", "bake", "-f", bakeFile, "--metadata-file=metadata.json"}
+	// Always save unless one specifies --no-save.
+	if !noSave {
+		args = append(args, "--save")
+	}
 
 	if sbom {
-		args = append(args, "--sbom=true")
+		// produce and download sboms
+		args = append(args, "--sbom=true", "--sbom-dir=/mnt/sboms")
 	}
 	if noCache {
 		args = append(args, "--no-cache")
@@ -288,11 +288,59 @@ func bake(ctx context.Context,
 		From(depotImage).
 		WithMountedDirectory("/mnt", directory).
 		WithEnvVariable("DEPOT_PROJECT_ID", project).
+		WithEnvVariable("DEPOT_DISABLE_OTEL", "true").
 		WithSecretVariable("DEPOT_TOKEN", token).
 		WithWorkdir("/mnt")
 
 	// WithExec must come after WithUnixSocket and WithEnvVariable please.
-	return container.WithExec(args, ContainerWithExecOpts{SkipEntrypoint: true}), nil
+	exec := container.WithExec(args, ContainerWithExecOpts{SkipEntrypoint: true})
+	metadataFile := exec.File("metadata.json")
+	buf, err := metadataFile.Contents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var bakeMetadata BakeMetadata
+	err = json.Unmarshal([]byte(buf), &bakeMetadata)
+	if err != nil {
+		return nil, err
+	}
+
+	artifacts := make([]*BuildArtifact, 0, len(bakeMetadata.Targets))
+	for target, metadata := range bakeMetadata.Targets {
+		imageName := fmt.Sprintf("registry.depot.dev/%s:%s-%s", bakeMetadata.DepotBuild.ProjectID, bakeMetadata.DepotBuild.BuildID, target)
+		artifact := &BuildArtifact{
+			Token:     token,
+			Project:   project,
+			Target:    target,
+			ImageName: imageName,
+			Size:      metadata.Size(),
+		}
+		if sbom {
+			artifact.SBOMDir = exec.Directory("/mnt/sboms")
+		}
+		artifacts = append(artifacts, artifact)
+	}
+
+	return &Artifacts{Artifacts: artifacts}, nil
+}
+
+type Artifacts struct {
+	Artifacts []*BuildArtifact
+}
+
+func (a *Artifacts) Get(target string) (*BuildArtifact, error) {
+	for _, artifact := range a.Artifacts {
+		if artifact.Target == target {
+			return artifact, nil
+		}
+	}
+
+	targets := make([]string, 0, len(a.Artifacts))
+	for _, artifact := range a.Artifacts {
+		targets = append(targets, artifact.Target)
+	}
+
+	return nil, fmt.Errorf("no such artifact target %s. valid targets: %s", target, strings.Join(targets, ", "))
 }
 
 func latestDepotVersion() (string, error) {
@@ -325,7 +373,6 @@ func latestDepotVersion() (string, error) {
 type Metadata struct {
 	// This is the index of the image in the manifest list.
 	ContainerImageDescriptor OCIDescriptor `json:"containerimage.descriptor,omitempty"`
-	DepotBuild               DepotBuild    `json:"depot.build,omitempty"`
 	// Use this for the image name.
 	ImageName string `json:"image.name,omitempty"`
 	// Ignore Image configs for now.
@@ -350,9 +397,46 @@ func (m *Metadata) Size() int64 {
 	return size
 }
 
+type BuildMetadata struct {
+	DepotBuild DepotBuild `json:"depot.build,omitempty"`
+	Metadata
+}
+
+type BakeMetadata struct {
+	DepotBuild DepotBuild
+	Targets    map[string]Metadata
+}
+
+func (m *BakeMetadata) UnmarshalJSON(d []byte) error {
+	var obj map[string]json.RawMessage
+	err := json.Unmarshal(d, &obj)
+	if err != nil {
+		return err
+	}
+
+	m.Targets = make(map[string]Metadata)
+	for k, v := range obj {
+		if k == "depot.build" {
+			err = json.Unmarshal(obj["depot.build"], &m.DepotBuild)
+			if err != nil {
+				return err
+			}
+		} else {
+			var md Metadata
+			err = json.Unmarshal(v, &md)
+			if err != nil {
+				return err
+			}
+			m.Targets[k] = md
+		}
+	}
+	return nil
+}
+
 type DepotBuild struct {
-	BuildID   string `json:"buildID,omitempty"`
-	ProjectID string `json:"projectID,omitempty"`
+	BuildID   string   `json:"buildID,omitempty"`
+	ProjectID string   `json:"projectID,omitempty"`
+	Targets   []string `json:"targets,omitempty"`
 }
 
 type Manifest struct {

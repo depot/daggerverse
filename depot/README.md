@@ -27,11 +27,11 @@ dagger call -m github.com/depot/daggerverse/depot \
   build --token env:DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --sbom sbom
 ```
 
-### Run bake to build many containers.
+### Run bake to build many containers and print image sizes in bytes
 
 ```sh
 dagger call -m github.com/depot/daggerverse/depot \
-  bake --token env:DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl
+  bake --token env:DEPOT_TOKEN --project $DEPOT_PROJECT --directory . --bake-file docker-bake.hcl artifacts image-bytes
 ```
 
 ## API Examples
