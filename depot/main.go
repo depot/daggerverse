@@ -61,9 +61,22 @@ func (b *BuildArtifact) SBOM(ctx context.Context) (*File, error) {
 
 	var sboms []*File
 	for _, path := range paths {
-		sbomFile := b.SBOMDir.File(path)
-		sboms = append(sboms, sbomFile)
+		if !strings.HasSuffix(path, ".spdx.json") {
+			continue
+		}
+		if strings.Contains(path, "sbom.spdx.json") {
+			sbomFile := b.SBOMDir.File(path)
+			sboms = append(sboms, sbomFile)
+			continue
+		}
+
+		if b.Target != "" && strings.Contains(path, b.Target) {
+			sbomFile := b.SBOMDir.File(path)
+			sboms = append(sboms, sbomFile)
+			continue
+		}
 	}
+
 	if len(sboms) == 0 {
 		return nil, fmt.Errorf("no sboms found")
 	}
@@ -247,7 +260,8 @@ func (m *Depot) Bake(ctx context.Context,
 	}
 
 	if sbom {
-		args = append(args, "--sbom=true")
+		// produce and download sboms
+		args = append(args, "--sbom=true", "--sbom-dir=/mnt/sboms")
 	}
 	if noCache {
 		args = append(args, "--no-cache")
@@ -300,7 +314,9 @@ func (m *Depot) Bake(ctx context.Context,
 			Target:    target,
 			ImageName: imageName,
 			Size:      metadata.Size(),
-			// TODO: sboms
+		}
+		if sbom {
+			artifact.SBOMDir = exec.Directory("/mnt/sboms")
 		}
 		artifacts = append(artifacts, artifact)
 	}
