@@ -27,6 +27,8 @@ type BuildArtifact struct {
 	// depot project id
 	Project string
 
+	Target string
+
 	SBOMDir   *Directory
 	ImageName string
 	Size      int64
@@ -289,37 +291,40 @@ func (m *Depot) Bake(ctx context.Context,
 		return nil, err
 	}
 
-	artifacts := make(map[string]*BuildArtifact, len(bakeMetadata.Targets))
+	artifacts := make([]*BuildArtifact, 0, len(bakeMetadata.Targets))
 	for target, metadata := range bakeMetadata.Targets {
+		imageName := fmt.Sprintf("registry.depot.dev/%s:%s-%s", bakeMetadata.DepotBuild.ProjectID, bakeMetadata.DepotBuild.BuildID, target)
 		artifact := &BuildArtifact{
 			Token:     token,
 			Project:   project,
-			ImageName: metadata.ImageName,
+			Target:    target,
+			ImageName: imageName,
 			Size:      metadata.Size(),
 			// TODO: sboms
 		}
-		artifacts[target] = artifact
+		artifacts = append(artifacts, artifact)
 	}
 
-	return &Artifacts{artifacts: artifacts}, nil
+	return &Artifacts{Artifacts: artifacts}, nil
 }
 
 type Artifacts struct {
-	artifacts map[string]*BuildArtifact
+	Artifacts []*BuildArtifact
 }
 
-func (a *Artifacts) Target(target string) (*BuildArtifact, error) {
-	artifact, ok := a.artifacts[target]
-	if !ok {
-		targets := make([]string, 0, len(a.artifacts))
-		for artifact := range a.artifacts {
-			targets = append(targets, artifact)
+func (a *Artifacts) Get(target string) (*BuildArtifact, error) {
+	for _, artifact := range a.Artifacts {
+		if artifact.Target == target {
+			return artifact, nil
 		}
-
-		return nil, fmt.Errorf("no such artifact target %s. valid targets: %s", target, strings.Join(targets, ", "))
 	}
 
-	return artifact, nil
+	targets := make([]string, 0, len(a.Artifacts))
+	for _, artifact := range a.Artifacts {
+		targets = append(targets, artifact.Target)
+	}
+
+	return nil, fmt.Errorf("no such artifact target %s. valid targets: %s", target, strings.Join(targets, ", "))
 }
 
 func latestDepotVersion() (string, error) {
