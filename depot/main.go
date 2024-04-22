@@ -343,6 +343,57 @@ func (a *Artifacts) Get(target string) (*BuildArtifact, error) {
 	return nil, fmt.Errorf("no such artifact target %s. valid targets: %s", target, strings.Join(targets, ", "))
 }
 
+func (m *Depot) Pull(ctx context.Context,
+	// depot CLI version
+	// +optional
+	depotVersion string,
+	// depot token
+	token *Secret,
+	// depot project id
+	project string,
+	// depot build id to pull
+	buildID string,
+	// platform architecture to pull
+	// +optional
+	platforms string,
+	// tag pulled image with this tag
+	// +optional
+	tag string,
+	// pull a specific target from a bake command
+	target string) (*Container, error) {
+	args := []string{"/usr/bin/depot", "pull", buildID}
+
+	for _, platform := range platforms {
+		args = append(args, "--platform", string(platform))
+	}
+
+	if tag != "" {
+		args = append(args, "--tag", tag)
+	}
+
+	if target != "" {
+		args = append(args, "--target", target)
+	}
+
+	if depotVersion == "" {
+		var err error
+		depotVersion, err = latestDepotVersion()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	depotImage := fmt.Sprintf("public.ecr.aws/depot/cli:%s", depotVersion)
+
+	container := dag.Container().
+		From(depotImage).
+		WithEnvVariable("DEPOT_PROJECT_ID", project).
+		WithSecretVariable("DEPOT_TOKEN", token).
+		WithExec(args, ContainerWithExecOpts{SkipEntrypoint: true})
+
+	return container, nil
+}
+
 func latestDepotVersion() (string, error) {
 	url := fmt.Sprintf("https://dl.depot.dev/cli/release/%s/%s/latest", runtime.GOOS, runtime.GOARCH)
 	req, err := http.NewRequest("GET", url, nil)
