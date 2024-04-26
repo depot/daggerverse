@@ -22,6 +22,8 @@ import (
 type Depot struct{}
 
 type BuildArtifact struct {
+	// depot build id
+	BuildID string
 	// depot token
 	Token *Secret
 	// depot project id
@@ -206,6 +208,7 @@ func (m *Depot) Build(ctx context.Context,
 	}
 
 	artifact := &BuildArtifact{
+		BuildID:   metadata.DepotBuild.BuildID,
 		Token:     token,
 		Project:   project,
 		ImageName: metadata.ImageName,
@@ -309,6 +312,7 @@ func (m *Depot) Bake(ctx context.Context,
 	for target, metadata := range bakeMetadata.Targets {
 		imageName := fmt.Sprintf("registry.depot.dev/%s:%s-%s", bakeMetadata.DepotBuild.ProjectID, bakeMetadata.DepotBuild.BuildID, target)
 		artifact := &BuildArtifact{
+			BuildID:   bakeMetadata.DepotBuild.BuildID,
 			Token:     token,
 			Project:   project,
 			Target:    target,
