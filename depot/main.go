@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"main/internal/dagger"
 	"net/http"
 	"runtime"
 	"strings"
@@ -25,19 +26,19 @@ type BuildArtifact struct {
 	// depot build id
 	BuildID string
 	// depot token
-	Token *Secret
+	Token *dagger.Secret
 	// depot project id
 	Project string
 
 	Target string
 
-	SBOMDir   *Directory
+	SBOMDir   *dagger.Directory
 	ImageName string
 	Size      int64
 }
 
 // Creates a container from the recently built image artifact.
-func (b *BuildArtifact) Container() *Container {
+func (b *BuildArtifact) Container() *dagger.Container {
 	return dag.Container().WithRegistryAuth("registry.depot.dev", "x-token", b.Token).From(b.ImageName)
 }
 
@@ -51,7 +52,7 @@ func (b *BuildArtifact) ImageBytes() int64 {
 
 // Returns an SBOM if built option `--sbom` was requested.
 // Returns an error if the build did not produce SBOMs.
-func (b *BuildArtifact) SBOM(ctx context.Context) (*File, error) {
+func (b *BuildArtifact) SBOM(ctx context.Context) (*dagger.File, error) {
 	if b.SBOMDir == nil {
 		return nil, fmt.Errorf("sbom not generated; use --sbom")
 	}
@@ -61,7 +62,7 @@ func (b *BuildArtifact) SBOM(ctx context.Context) (*File, error) {
 		return nil, err
 	}
 
-	var sboms []*File
+	var sboms []*dagger.File
 	for _, path := range paths {
 		if !strings.HasSuffix(path, ".spdx.json") {
 			continue
@@ -94,11 +95,11 @@ func (m *Depot) Build(ctx context.Context,
 	// +optional
 	depotVersion string,
 	// Depot token
-	token *Secret,
+	token *dagger.Secret,
 	// Depot project id
 	project string,
 	// Source context directory for build
-	directory *Directory,
+	directory *dagger.Directory,
 	// Path to dockerfile
 	// +optional
 	// +default="Dockerfile"
@@ -106,7 +107,7 @@ func (m *Depot) Build(ctx context.Context,
 	// Platforms are architecture and OS combinations for which to build the image.
 	// +optional
 	// +default=null
-	platforms []Platform,
+	platforms []dagger.Platform,
 	// Produce software bill of materials for image
 	// +optional
 	// +default=false
@@ -194,7 +195,7 @@ func (m *Depot) Build(ctx context.Context,
 		WithSecretVariable("DEPOT_TOKEN", token).
 		WithWorkdir("/mnt")
 
-	exec := container.WithExec(args, ContainerWithExecOpts{SkipEntrypoint: true})
+	exec := container.WithExec(args)
 	metadataFile := exec.File("metadata.json")
 	buf, err := metadataFile.Contents(ctx)
 	if err != nil {
@@ -230,11 +231,11 @@ func (m *Depot) Bake(ctx context.Context,
 	// +optional
 	depotVersion string,
 	// depot token
-	token *Secret,
+	token *dagger.Secret,
 	// depot project id
 	project string,
 	// source context directory for build
-	directory *Directory,
+	directory *dagger.Directory,
 	// path to bake definition file
 	bakeFile string,
 	// produce software bill of materials for image
@@ -296,7 +297,7 @@ func (m *Depot) Bake(ctx context.Context,
 		WithWorkdir("/mnt")
 
 	// WithExec must come after WithUnixSocket and WithEnvVariable please.
-	exec := container.WithExec(args, ContainerWithExecOpts{SkipEntrypoint: true})
+	exec := container.WithExec(args)
 	metadataFile := exec.File("metadata.json")
 	buf, err := metadataFile.Contents(ctx)
 	if err != nil {
