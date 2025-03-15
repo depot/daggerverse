@@ -116,10 +116,13 @@ func (m *Depot) Build(ctx context.Context,
 	// +optional
 	// +default=false
 	noCache bool,
-	// Do not save the image to the depot ephemeral registry
+	// Do not save the image to the depot registry
 	// +optional
 	// +default=false
 	noSave bool,
+	// Additional custom tags for the saved image
+	// +optional
+	saveTags []string,
 	// Lint dockerfile
 	// +optional
 	// +default=false
@@ -142,6 +145,10 @@ func (m *Depot) Build(ctx context.Context,
 	// Always save unless one specifies --no-save.
 	if !noSave {
 		args = append(args, "--save")
+	}
+
+	for _, tag := range saveTags {
+		args = append(args, fmt.Sprintf("--save-tag=%s", tag))
 	}
 
 	for _, platform := range platforms {
@@ -246,7 +253,7 @@ func (m *Depot) Bake(ctx context.Context,
 	// +optional
 	// +default=false
 	noCache bool,
-	// Do not save the image to the depot ephemeral registry
+	// Do not save the image to the depot registry
 	// +optional
 	// +default=false
 	noSave bool,
